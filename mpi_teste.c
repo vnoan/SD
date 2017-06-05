@@ -41,9 +41,9 @@ void Distribui_Tarefas(int index){
     int **m1, **m2;
     if(index == 0){ //Processo de contrle
             //Gera os valores aleatórios
-            int p = (rand()%10) + 1;
-            int l = (rand()%10) + 1;
-            int c = (rand()%10) + 1;
+            int p = 10;//(rand()%10) + 1;
+            int l = 25;//(rand()%10) + 1;
+            int c = 25;//(rand()%10) + 1;
             //Gera as matrizes
             m1 = Gera_Matriz(l,p);
             m2 = Gera_Matriz(p,c);
@@ -52,17 +52,16 @@ void Distribui_Tarefas(int index){
             m2 = Preenche_Matriz(m2,p,c);
             //Imprime as matrizes
             printf("Imprimindo as matrizes\n");
-            printf("--------------\n");
+            printf("------M1--------\n");
             Imprime_Matriz(m1, l, p);
-            printf("--------------\n");
+            printf("------M2--------\n");
             Imprime_Matriz(m2, p, c);
             printf("--------------\n");
             //Gera valores auxiliares
-            //t = nº de threads que farão multiplicação. world_size = nº total de threads, incluindo a de controle
-            int t = world_size - 1;
+            int t = world_size - 1; //-1 para desconsiderar o processo de controle
             //Numero de multiplicações a serem feitas
             int mult = l*c;
-            printf("%d multiplicações de vetores\n", mult);
+            printf("%d multiplicações de vetores\n\n", mult);
             //Quantas multiplicações de vetores cada thread vai fazer
             int quantas_vezes = mult / t;
             //Quantas multiplicações além das distribuidas igualmente
@@ -87,11 +86,9 @@ void Distribui_Tarefas(int index){
                 {
                 //    MPI_Isend(&p, 1, MPI_INT, i, 0, MPI_COMM_WORLD,&r);
                     MPI_Send(&p, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
-                    printf("Tam enviado para %d\n",i);
-
                 }
             }
-            //
+            //Enviando os dados
             int aux_l = 0, aux_c = 0;
             for(int i = 0; i < t; i++){
                 for(int j = 0; j < threads[i]; j++){
@@ -100,22 +97,25 @@ void Distribui_Tarefas(int index){
                     for(int a = 0; a < p; a++){
                         linha[a] = m1[a][aux_l];
                         coluna[a] = m2[aux_c][a];
+
                     }
-                    printf("\n");
-                    //Envia os dados
-                    if(aux_c < c){  //Se aux_c == c entao tem que mudar de linha na matriz
-                        MPI_Send(&linha, p, MPI_INT, i+1, 0, MPI_COMM_WORLD);
-                        MPI_Send(&coluna, p, MPI_INT, i+1, 0, MPI_COMM_WORLD);
-                        printf("Valores enviados para %d",i+1);
-                        aux_c++;
-                    }
-                    else{
-                        //Altera as linhas e colunas
+                    //Faz o controle da posição na matriz
+                    aux_c++;
+                    if(aux_c >= c){
                         aux_c = 0;
                         aux_l++;
                     }
+                    //Envia os dados
+                    MPI_Send(&linha, p, MPI_INT, i+1, 0, MPI_COMM_WORLD);
+                    MPI_Send(&coluna, p, MPI_INT, i+1, 0, MPI_COMM_WORLD);
+                    //Enviar os dados de maneira assincrona é mais vantajoso. Porem nao esta funcionando
+                    //MPI_Request r1,r2;
+                    //MPI_Isend(&linha, p, MPI_INT, i+1, 0, MPI_COMM_WORLD,&r1);
+                    //MPI_Isend(&coluna, p, MPI_INT, i+1, 0, MPI_COMM_WORLD,&r2);
+
                 }
             }
+
             //Recebe os valores de volta
             int** m_result = Gera_Matriz(l,c);
             aux_l = 0; aux_c = 0;
@@ -148,32 +148,42 @@ void Distribui_Tarefas(int index){
             return;     //Return ou Exit?
         //Recebe o tamanho dos vetores
         MPI_Recv(&tam, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        printf("Tam recebido em %d\n",index);
+        //printf("Tam recebido em %d\n",index);
         //Recebe os dados
         int v1[vezes][tam], v2[vezes][tam];
         int resultados[vezes];
         MPI_Request requests[vezes];
         for(int i = 0; i < vezes; i++){
-            /*printf("%d: %d e %d\n", index, vezes, tam);
-            MPI_Recv(v1[i], tam, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            MPI_Recv(v2[i], tam, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            */
-            MPI_Irecv(&v1[i], tam, MPI_INT, 0, 0, MPI_COMM_WORLD, &requests[i]);
-            MPI_Irecv(&v2[i], tam, MPI_INT, 0, 0, MPI_COMM_WORLD, &requests[i]);
+            //printf("%d: %d e %d\n", index, vezes, tam);
+            int aux1[tam], aux2[tam];
+            MPI_Recv(aux1, tam, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(aux2, tam, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            for(int j = 0; j < tam; j++)
+            {
+                v1[i][j] = aux1[j];
+                v2[i][j] = aux2[j];
+            }
+            /*
+            MPI_Irecv(v1[i], tam, MPI_INT, 0, 0, MPI_COMM_WORLD, &requests[i]);
+            MPI_Irecv(v2[i], tam, MPI_INT, 0, 0, MPI_COMM_WORLD, &requests[i]);
             printf("Valores recebidos em %d\n",index);
+            */
         }
         //Multiplica os vetores
         for(int i = 0; i < vezes; i++){
             resultados[i] = 0;
-            MPI_Status s;
-            MPI_Wait(&requests[i],&s);
+            //MPI_Status s;
+            //MPI_Wait(&requests[i],&s);
             for(int aux = 0; aux < tam; aux++){
                 resultados[i] += v1[i][aux] * v2[i][aux];
             }
          }
         //Retorna os valores para a thread inicial
-        MPI_Request request;
+        /*MPI_Request request;
         MPI_Isend(&resultados, vezes, MPI_INT, 0, 0, MPI_COMM_WORLD, &request);
+        */
+        MPI_Send(&resultados, vezes, MPI_INT, 0, 0, MPI_COMM_WORLD);
+
     }
 }
 
@@ -192,7 +202,13 @@ int main(int argc, char** argv) {
 
     srand(time(NULL)); //Altera o seed da função srand
 
+    double t_inicio = MPI_Wtime();
+
     Distribui_Tarefas(world_rank);
+
+    double t_fim = MPI_Wtime();
+    if(world_rank == 0)
+        printf("Tempo de execução: %f segundos\n", t_fim - t_inicio);
 
     // Finalize the MPI environment.
     MPI_Finalize();
